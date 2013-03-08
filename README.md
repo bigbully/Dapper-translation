@@ -1,4 +1,4 @@
-Dapper，大规模集群的跟踪系统
+﻿Dapper，大规模集群的跟踪系统
 作者：Benjamin H. Sigelman, Luiz Andr´e Barroso, Mike Burrows, Pat Stephenson,
 Manoj Plakal, Donald Beaver, Saul Jaspan, Chandan Shanbhag
 
