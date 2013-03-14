@@ -248,18 +248,94 @@
 <h2>6.2	解决延迟的长尾效应</h2>
 <p>考虑到移动部件的数量、代码库的规模、部署的范围，调试一个像全文搜索那样服务（第1节里提到过）是非常具有挑战性的。在这节，我们描述了我们在减轻全文搜索的延迟分布的长尾效应上做的各种努力。Dapper能够验证端到端的延迟的假设，更具体地说，Dapper能够验证对于搜索请求的关键路径。当一个系统不仅涉及数个子系统而是几十个开发团队的涉及到的系统的情况下，端到端性能较差的根本原因到底在哪，这个问题即使是我们最好的和最有经验的工程师也无法正确判断。在这种情况下，Dapper可以提供急需的数据，而且可以对许多重要的性能问题得出结论。</p>
 
+<img src="images/img7.png" />
+
+<p>图7：全局搜索的跟踪片段，在不常遇到高网络延迟的情况下，在沿着关键路径的端到端的请求延迟，如图所示。</p>
+
+<p>在调试延迟长尾效应的过程中，工程师可以建立一个小型库，这个小型库可以根据DAPI跟踪对象来推断关键路径的层级结构。这些关键路径的结构可以被用来诊断问题，并且为全文搜索提供可优先处理的预期的性能改进。Dapper的这项工作导致了下列发现：</p>
+<ul>
+	<li>在关键路径上的短暂的网络性能退化不影响系统的吞吐量，但它可能会对延迟异常值产生极大的影响。在图7中可以看出，大部分的全局搜索的缓慢的跟踪都来源于关键路径的网络性能退化。</li>
+	<li>许多问题和代价很高的查询模式来源于一些意想不到的服务之间的交互。一旦发现，往往容易纠正它们，但是Dapper出现之前想找出这些问题是相当困难的。</li>
+	<li>通用的查询从Dapper之外的安全日志仓库中收取，并使用Dapper唯一的跟踪ID，与Dapper的仓库做关联。然后，该映射用来建立关于这个实例查询在全局搜索中通过每一个子系统时表现缓慢的列表。</li>
+</ul>
+
+
+<h2>6.3	推断服务依赖</h2>
+<p>在任何给定的时间内，Google内部的一个典型的计算集群是一个汇集了成千上万个逻辑“jobs”的主机，成千上万的处理器在执行一个通用的方法。Google维护着许多这样的集群，当然，事实上，我们发现在一个集群上计算着的这些jobs通常依赖于其他的集群。由于jobs之间的依赖是动态改变的，所以不可能仅从配置信息上推断出所有这些服务之间的依赖。不过，除了其他方面的原因之外，在公司内部的各个流程需要准确的服务依赖关系信息，以确定瓶颈所在，以及计划服务的迁移。Google的名为“Service Dependencies”的项目是通过使用跟踪Annotation和DAPI MapReduce接口来实现自动化服务依赖归属的。</p>
+<p>Dapper核心组件与Dapper跟踪Annotation一并使用的情况下，“Service Dependencies”项目能够推算出job各自之间的依赖，以及job和其他软件组件之间的依赖。比如，所有的BigTable的操作会加上与受影响的表名称相关的标记。运用Dapper的平台，Service Dependencies团队就可以自动的推算出依赖于命名的不同资源的服务粒度。</p>
+
+<h2>6.4	不同服务的网络使用率</h2>
+<p>Google投入了大量的人力和物力资源在他的网络结构上。从前网络管理员可能只关注独立的硬件信息、常用工具及以及搭建出的各种仪表盘上的信息，而今天，毫不奇怪，网络管理员早已将访问监测信息提升到可以鸟瞰全局网络使用上。网络管理员确实可以一览整个网络的健康状况，但是，当遇到问题时，他们很少有能够准确查找网络负载的工具，用来定位应用程序级别的罪魁祸首。</p>
+<p>虽然Dapper不是设计用于链路级的监测，但是我们发现，它是非常适合去做集群之间网络活动性的应用级任务的分析。Google能够利用Dapper这个平台，建立一个不断更新的控制台，来显示集群之间最活跃的网络流量的应用程序级别的热点。此外，使用Dapper我们能够为昂贵的网络请求提供指出的构成原因的跟踪，而不是面对不同服务器之间的信息孤岛而无所适从。建立一个基于Dapper API的仪表盘总共不用花超过2周的时间。</p>
+
+<h2>6.5	分层和共享存储系统</h2>
+<p>在Google的许多存储系统是由多重独立复杂层级的分布式基础设备组成的。例如，Google的App Engine[5]就是搭建在一个可扩展的实体存储系统上的。该实体存储系统在基于BigTable上公开某些RDBMS功能。 BigTable的同时使用Chubby[7]（分布式锁系统）及GFS。再者，像BigTable这样的系统简化了部署，并更好的利用了计算资源。</p>
+<p>在这种分层的系统，并不总是很容易确定最终用户资源的消费模式。例如，来自于一个给定的BigTable单元格的GFS大信息量主要来自于一个用户或是由多个用户产生，但是在GFS层面，这两种明显的使用场景是很难界定。而且，如果缺乏一个像Dapper一样的工具的情况下 ，对共享服务的竞争可能会同样难于调试。</p>
+<p>第5.2节中所示的Dapperd的用户界面可以聚合那些调用任意公共服务的多个客户端的跟踪的性能信息。这就很容易让提供这些服务的源从多个维度给他们的用户排名。（例如，入站的网络负载，出站的网络负载，或服务请求的总时间）</p>
+
+<h2>6.6	Dapper的救火能力</h2>
+<p>对于一些“救火”任务，Dapper可以处理其中的一部分。“救火”任务在这里是指一些有风险很高的在分布式系统上的操作。通常情况下，Dapper用户当正在进行“救火”任务时需要使用新的数据，并且没有时间写新的DAPI代码或等待周期性的报告运行。</p>
+对于那些高延迟，不，可能更糟糕的在正常负载下都会相应超时的服务，Dapper用户界面通常会把这些延迟瓶颈的位置隔离出来。通过与Dapper守护进程的直接通信，那些特定的高延迟的跟踪数据轻易的收集到。当出现灾难性故障时，通常是没有必要去看统计数据以确定根本原因，只查看示例跟踪就足够了。</p>
+<p>但是，如在6.5节中描述的共享的存储服务，要求当用户活动过程中突然中断时能尽可能快的汇总信息。对于事件发生之后，共享服务仍然可以利用汇总的的Dapper数据，但是，除非收集到的Dapper数据的批量分析能在问题出现10分钟之内完成，否则Dapper面对与共享存储服务相关的“救火”就很难按预想的那般顺利完成任务。</p>
 
 
+<h2>7. 其他收获</h2>
+<p>虽然迄今为止，我们在Dapper上的经验已经大致符合我们的预期，但是也出现了一些积极的方面是我们没有充分预料到的。首先，我们获得了超出预期的Dapper使用用例的数量，对此我们可谓欢心鼓舞。另外，在除了几个的在第6节使用经验中提到过的一些用例之外，还包括资源核算系统，对指定的通讯模式敏感的服务的检查工具，以及一种对RPC压缩策略的分析器，等等。我们认为这些意想不到的用例一定程度上是由于我们向开发者以一种简单的编程接口的方式开放了跟踪数据存储的缘故，这使得我们能够充分利用这个大的多的社区的创造力。除此之外，Dapper对旧的负载支持的支持也比预期的要简单，只需要在程序中引入一个用新版本的重新编译过的公共库即可，这个公共库程序库使用共同支持的多线程，控制流和RPC框架。</p>
+<p>Dapper在Google内部的广泛使用还为我们在Dapper的局限性上提供了宝贵的反馈意见。下面我们将介绍一些我们已知的最重要的Dapper的不足：</p>
 
+<ul>
+	<li>合并的影响：我们的模型隐含的前提是不同的子系统在处理的都是来自同一个被跟踪的请求。在某些情况下，缓冲一部分请求，然后一次性操作一个请求集会更加有效。（比如，磁盘上的一次合并写入操作）。在这种情况下，一个被跟踪的请求可以看似是一个大型工作单元。此外，当有多个追踪请求被收集在一起，他们当中只有一个会用来生成那个唯一的跟踪id，用来给其他span使用，所以就无法跟踪下去了。我们正在考虑的解决方案--在可以识别这种情况的前提下，尽可能少的记录能够消除这种歧义的信息。</li>
+	<li>跟踪批处理负载：Dapper的设计，主要是针对在线服务系统，最初的目标是了解一个用户请求产生的系统行为。然而，离线的密集型负载，例如符合MapReduce[10]模型情况，也可以受益于性能挖潜。在这种情况下，我们需要把跟踪id与一些其他的有意义的工作单元做关联，诸如输入数据中的键值（或键值的范围），或是一个MapReduce碎片。</li>
+	<li>寻找根源：Dapper可以有效地确定系统中的哪一部分致使系统整个速度变慢，但并不总是足够的造成问题的根源。例如，一个请求很慢有可能不是因为它自己的行为，而是由于其他排在它前面的请求还没处理完。程序可以使用应用级的标注把队列的大小或过载情况写入跟踪系统。此外，如果这种情况屡见不鲜，那么在ProfileMe[11]中提到的成对的采样技术可以解决这个问题。它由两个时间重叠的采样率组成，并观察它们在整个系统中的相对延迟。</li>
+	<li>记录内核级的信息：一些内核可见的事件的详细信息有时对确定问题根源是很有用的。我们有一些工具，能够跟踪或以其他方式描述内核的执行，但是，想用通用的或是不那么突兀的方式，是很难把这些信息到捆绑到用户级别的跟踪上下文中。我们正在研究一种妥协的解决方案，我们在用户层面上把一些内核级的活动参数做快照，然后绑定他们到一个活动的span上。</li>
+</ul>
+	
+<h2>8. 相关工作</h2>
+<p>在分布式系统跟踪领域，有一套完整的体系，一部分系统主要关注定位到故障位置，其他的目标是针对性能进行优化。 dapper确实被用于发现系统问题，但它更通常用于探查性能不足，以及提高全面大规模的工作负载下的系统行为的理解。</p>
+<p>Dapper与黑盒监控系统相关，比如Project5[1]，WAP5[15]和Sherlock[2]，可以说不依赖运行库的情况下，黑盒监控系统能够实现更高的应用级透明。黑盒的缺点是一定程度上不够精确，并可能在统计推断关键路径时带来更大的系统损耗。</p>
+<p>对于分布式系统监控来说，基于Annotation的中间件或应用自身是一个可能是更受欢迎的解决办法.拿Pip[14]和Webmon[16]系统举例，他们更依赖于应用级的Annotation，而X-Trace[12]，Pinpoint[9]和Magpie[3]大多集中在对库和中间件的修改。Dapper更接近后者。像Pinpoint，X-Trace，和早期版本的Magpie一样，Dapper采用了全局标识符把分布式系统中各部分相关的事件联系在一起。和这些系统类似，Dapper尝试避免使用应用级Annotation，而是把组件的侵入隐藏在通用软件模块内。Magpi放弃使用全局ID，仍然试图正确的完成请求的正确传播，他通过采用应用系统各自写入的事件策略，最终也能精确描述不同事件之间关系。目前还不清楚在实际环境中实现透明性这些策略到底多么有效。 X-Trace的核心Annotation比Dapper更有野心一些，因为X-Trace系统对于跟踪的收集，不仅在跟踪节点层面上，而且在节点内部也会进行跟踪。而我们对于组件的低性能损耗的要求迫使我们不能采用X-Trace这样的模型，而是朝着把一个请求连接起来完整跟踪所能做到的最小代价而努力。而Dapper的跟踪仍然可以从可选的应用级Annotation中获益。</p>
 
+<h2>9. 总结</h2>
+<p>在本文中，我们介绍Dapper这个Google的生产环境下的分布式系统跟踪平台，并回报了我们在开发和使用它的相关经验。 </p>Dapper几乎在部署在所有的Google系统上，并可以在不需要应用级修改的情况下进行跟踪，而且没有明显的性能影响。Dapper对于开发人员和运维团队带来的好处，可以从我们主要的跟踪用户界面的广泛使用上看出来，另外我们还列举了一些Dapper的使用用例来说明Dapper的作用，这些用例有些甚至都没有Dapper开发团队参与，而是被应用开发者开发出来的。</p>
+<p>据我们所知，这是第一篇汇报生产环境下分布式系统跟踪框架的论文。事实上，我们的主要贡献源于这个事实：论文中回顾的这个系统已经运行两年之久。我们发现，结合对开发人员提供简单API和对应用系统完全透明来增强跟踪的这个决定，是非常值得的。</p>
+我们相信，Dapper比以前的基于Annotation的分布式跟踪达到更高的应用透明度，这一点已经通过很小部分人工干预的负载得以证明。虽然一定程度上得益于我们的系统的同质性，但它本身仍然是一个重大的挑战。最重要的是，我们的设计提出了一些实现应用级透明性的充分条件，对此我们希望能够对更错杂环境下的解决方案的开发有所帮助。</p>
+<p>最后，通过开放Dapper跟踪仓库给内部开发者，我们促使更多的基于跟踪仓库的分析工具的产生，而仅仅由Dapper团队默默的在信息孤岛中埋头苦干的结果远达不到现在这么大的规模，这个决定促使了设计和实施的展开。</p>
 
+<h3>Acknowledgments</h3>
+<p>We thank Mahesh Palekar, Cliff Biffle, Thomas Kotzmann, Kevin Gibbs, Yonatan Zunger, Michael Kleber, and Toby Smith for their experimental data and feedback about Dapper experiences. We also thank Silvius Rus for his assistance with load testing. Most importantly, though, we thank the outstanding team of engineers who have continued to develop and improve Dapper over the years; in order of appearance, Sharon Perl, Dick Sites, Rob von Behren, Tony DeWitt, Don Pazel, Ofer Zajicek, Anthony Zana, Hyang-Ah Kim, Joshua MacDonald, Dan Sturman, Glenn Willen, Alex Kehlenbeck, Brian McBarron, Michael Kleber, Chris Povirk, Bradley White, Toby Smith, Todd Derr, Michael De Rosa, and Athicha Muthitacharoen. They have all done a tremendous amount of work to make Dapper a day-to-day reality at Google.</p>
 
+<h3>References</h3>
+<p>[1] M. K. Aguilera, J. C. Mogul, J. L. Wiener, P. Reynolds, and A. Muthitacharoen. Performance Debugging for Distributed Systems of Black Boxes. In Proceedings of the 19th ACM Symposium on Operating Systems Principles, December 2003.</p>
 
+<p>[2] P. Bahl, R. Chandra, A. Greenberg, S. Kandula, D. A. Maltz, and M. Zhang. Towards Highly Reliable Enterprise Network Services Via Inference of Multi-level Dependencies. In Proceedings of SIGCOMM, 2007.</p>
 
+<p>[3] P. Barham, R. Isaacs, R. Mortier, and D. Narayanan. Magpie: online modelling and performance-aware systems. In Proceedings of USENIX HotOS IX, 2003.</p>
 
+<p>[4] L. A. Barroso, J. Dean, and U. Holzle. Web Search for a Planet: The Google Cluster Architecture. IEEE Micro, 23(2):22–28, March/April 2003.</p>
 
+<p>[5] T. O. G. Blog. Developers, start your engines. http://googleblog.blogspot.com/2008/04/developers-start-your-engines.html,2007.</p>
 
+<p>[6] T. O. G. Blog. Universal search: The best answer is still the best answer. http://googleblog.blogspot.com/2007/05/universal-search-best-answer-is-still.html, 2007.</p>
 
+<p>[7] M. Burrows. The Chubby lock service for loosely-coupled distributed systems. In Proceedings of the 7th USENIX Symposium on Operating Systems Design and Implementation, pages 335 – 350, 2006. </p>
+
+<p>[8] F. Chang, J. Dean, S. Ghemawat, W. C. Hsieh, D. A. Wallach, M. Burrows, T. Chandra, A. Fikes, and R. E. Gruber. Bigtable: A Distributed Storage System for Structured Data. In Proceedings of the 7th USENIX Symposium on Operating Systems Design and Implementation (OSDI’06), November 2006.</p>
+
+<p>[9] M. Y. Chen, E. Kiciman, E. Fratkin, A. fox, and E. Brewer. Pinpoint: Problem Determination in Large, Dynamic Internet Services. In Proceedings of ACM International Conference on Dependable Systems and Networks, 2002.</p>
+
+<p>[10] J. Dean and S. Ghemawat. MapReduce: Simplified Data Processing on Large Clusters. In Proceedings of the 6th USENIX Symposium on Operating Systems Design and Implementation (OSDI’04), pages 137 – 150, December 2004.</p>
+
+<p>[11] J. Dean, J. E. Hicks, C. A. Waldspurger, W. E. Weihl, and G. Chrysos. ProfileMe: Hardware Support for Instruction-Level Profiling on Out-of-Order Processors. In Proceedings of the IEEE/ACM International Symposium on Microarchitecture, 1997.</p>
+
+<p>[12] R. Fonseca, G. Porter, R. H. Katz, S. Shenker, and I. Stoica. X-Trace: A Pervasive Network Tracing Framework. In Proceedings of USENIX NSDI, 2007.</p>
+
+<p>[13] B. Lee and K. Bourrillion. The Guice Project Home Page. http://code.google.com/p/google-guice/, 2007. </p>
+
+<p>[14] P. Reynolds, C. Killian, J. L. Wiener, J. C. Mogul, M. A. Shah, and A. Vahdat. Pip: Detecting the Unexpected in Distributed Systems. In Proceedings of USENIX NSDI, 2006.</p>
+
+<p>[15] P. Reynolds, J. L. Wiener, J. C. Mogul, M. K. Aguilera, and A. Vahdat. WAP5: Black Box Performance Debugging for Wide-Area Systems. In Proceedings of the 15th International World Wide Web Conference, 2006.</p>
+
+<p>[16] P. K. G. T. Gschwind, K. Eshghi and K. Wurster. WebMon: A Performance Profiler for Web Transactions. In E-Commerce Workshop, 2002.</p>
 
 
         </section>
