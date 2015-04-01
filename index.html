@@ -102,7 +102,7 @@
 
 <h2>2.5 跟踪的收集</h2>
 
-<p>Dapper的跟踪记录和收集管道的过程分为三个阶段（参见图5）。首先，span数据写入（1）本地日志文件中。然后Dapper的守护进程和收集组件把这些数据从生产环境的主机中拉出来（2），最终写到（3）Dapper的Bigtable仓库中。一次跟踪被设计成Bigtable中的一行，每一列相当于一个span。Bigtable的支持稀疏表格布局正适合这种情况，因为每一次跟踪可以有任意多个span。跟踪数据收集的平均延迟--即从应用中的二进制数据传输到中央仓库（Bigtable）所花费的时间--不多于15秒。The 98th percentile latency is itself bimodal over time; approximately 75% of the time, 98th percentile collection latency is less than two minutes, but the other approximately 25% of the time it can grow to be many hours。（统计学相关，不会翻译）</p>
+<p>Dapper的跟踪记录和收集管道的过程分为三个阶段（参见图5）。首先，span数据写入（1）本地日志文件中。然后Dapper的守护进程和收集组件把这些数据从生产环境的主机中拉出来（2），最终写到（3）Dapper的Bigtable仓库中。一次跟踪被设计成Bigtable中的一行，每一列相当于一个span。Bigtable的支持稀疏表格布局正适合这种情况，因为每一次跟踪可以有任意多个span。跟踪数据收集（即从应用中的二进制数据传输到中央仓库所花费的时间）的延迟中位数少于15秒。第98百分位的延迟(The 98th percentile latency)往往随着时间的推移呈现双峰型;大约75%的时间，第98百分位的延迟时间小于2分钟，但是另外大约25%的时间，它可以增涨到几个小时。</p>
 <p>Dapper还提供了一个API来简化访问我们仓库中的跟踪数据。 Google的开发人员用这个API，以构建通用和特定应用程序的分析工具。第5.1节包含更多如何使用它的信息。</p>
 
 <h2>2.5.1 带外数据跟踪收集</h2>
